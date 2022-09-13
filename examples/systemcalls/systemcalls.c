@@ -1,4 +1,9 @@
 #include "systemcalls.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -17,7 +22,16 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
+  int rc = -1;
+  rc = system(cmd);
+  if(rc == 0) {
     return true;
+  }
+  else {
+    return false;
+  }
+
+
 }
 
 /**
@@ -40,24 +54,29 @@ bool do_exec(int count, ...)
     va_start(args, count);
     char * command[count+1];
     int i;
+    int rc = -1;
+    pid_t p;
+
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
-/*
- * TODO:
- *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
- *   Use the command[0] as the full path to the command to execute
- *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
-*/
+    if(command[0][0] != '/')
+      return false;
+
+    p = fork();
+    if(p == -1)
+      perror("fork");
+    else {
+      rc = execv(command[0], &command[1]);
+    }
+
+    if ((waitpid(p, &rc, 0) == -1) || rc != 0)
+      return false;
+    else
+      return true;
 
     va_end(args);
 
@@ -74,15 +93,41 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     va_list args;
     va_start(args, count);
     char * command[count+1];
-    int i;
+    int i, kidpid;
+    int rc = -1;
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
+
+    if (command[0][0] != '/')
+      return false;
+    int fd = open(outputfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+    if (fd < 0) {
+      perror("open");
+      abort();
+    }
+
+    kidpid = fork();
+    if(kidpid == -1) {
+      perror("fork");
+      return false;
+    }
+
+    if (dup2(fd, fileno(stdout)) < 0) {
+      perror("dup2");
+      return false;
+    }
+    else
+      rc = execv(command[0], &command[1]);
+
+    if ((waitpid(kidpid, &rc, 0) == -1) || rc != 0)
+      return -1;
+
+    va_end(args);
+
+    close(fd);
 
 
 /*
